@@ -70,4 +70,66 @@ export class OrdenesService {
             saldo_pendiente: orden.saldo
         };
     }
+
+    async obtenerOrden(id: string) {
+        const supabase = this.supabaseService.getClient();
+
+        const { data, error } = await supabase
+            .from('ordenes_pedido')
+            .select(`
+                *,
+                clientes (nombres, apellidos, cedula_ruc, telefono),
+                orden_detalles (*)
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error || !data) {
+            throw new InternalServerErrorException(`No se encontró la orden o hubo un error: ${error?.message}`);
+        }
+
+        return data;
+    }
+
+    async registrarPago(id: string, nuevoPago: number) {
+        const supabase = this.supabaseService.getClient();
+
+        // Consultar el estado actual de la orden
+        const { data: ordenActual, error: errorBusqueda } = await supabase
+            .from('ordenes_pedido')
+            .select('abono, saldo, subtotal')
+            .eq('id', id)
+            .single();
+
+        if (errorBusqueda || !ordenActual) {
+            throw new InternalServerErrorException('Orden no encontrada para registrar pago.');
+        }
+
+        // Validar que no pague más de lo que debe
+        if (nuevoPago > ordenActual.saldo) {
+            throw new InternalServerErrorException(`El pago ($${nuevoPago}) supera el saldo pendiente ($${ordenActual.saldo}).`);
+        }
+
+        // Calcular el nuevo abono acumulado
+        const abonoAcumulado = ordenActual.abono + nuevoPago;
+
+        // Actualizar la orden en la base de datos
+        const { data: ordenActualizada, error: errorUpdate } = await supabase
+            .from('ordenes_pedido')
+            .update({ abono: abonoAcumulado })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (errorUpdate) {
+            throw new InternalServerErrorException('Error al actualizar el abono en la base de datos.');
+        }
+
+        return {
+            mensaje: 'Pago registrado exitosamente',
+            pago_recibido: nuevoPago,
+            nuevo_abono_total: ordenActualizada.abono,
+            nuevo_saldo_pendiente: ordenActualizada.saldo
+        };
+    }
 }
