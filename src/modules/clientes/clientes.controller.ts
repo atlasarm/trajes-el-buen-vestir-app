@@ -1,13 +1,18 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { ClientesService } from './clientes.service';
+import { CreateClienteDto, UpdateClienteDto } from './dto/cliente.dto';
 
 @Controller('clientes')
 export class ClientesController {
     constructor(private readonly clientesService: ClientesService) { }
 
     @Get()
-    async obtenerTodos() {
-        return this.clientesService.obtenerTodos();
+    async obtenerTodos(
+        @Query('page') page: string,
+        @Query('limit') limit: string,
+        @Query('search') search: string
+    ) {
+        return this.clientesService.obtenerTodos(Number(page) || 1, Number(limit) || 10, search);
     }
 
     @Get('buscar/:cedula')
@@ -16,13 +21,12 @@ export class ClientesController {
     }
 
     @Post()
-    async registrarCliente(@Body() body: any) {
-        // TODO: Añadir DTOs
+    async registrarCliente(@Body() body: CreateClienteDto) {
         return await this.clientesService.crearCliente(body);
     }
 
     @Patch(':id')
-    async actualizar(@Param('id') id: string, @Body() cliente: any) {
+    async actualizar(@Param('id') id: string, @Body() cliente: UpdateClienteDto) {
         return this.clientesService.actualizar(id, cliente);
     }
 

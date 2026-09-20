@@ -1,25 +1,44 @@
 import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../config/supabase.service';
+import { CreateClienteDto, UpdateClienteDto } from './dto/cliente.dto';
 
 @Injectable()
 export class ClientesService {
     constructor(private readonly supabaseService: SupabaseService) { }
 
-    async obtenerTodos() {
-        const { data, error } = await this.supabaseService.getClient()
+    async obtenerTodos(page: number = 1, limit: number = 5, search: string = '') {
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        const supabase = this.supabaseService.getClient();
+
+        let query = supabase
             .from('clientes')
-            .select('*')
-            .order('nombres', { ascending: true });
+            .select('*', { count: 'exact' });
+
+        if (search) {
+            query = query.or(`cedula_ruc.ilike.%${search}%,nombres.ilike.%${search}%,apellidos.ilike.%${search}%`);
+        }
+
+        const { data, count, error } = await query
+            .order('nombres', { ascending: true })
+            .range(from, to);
 
         if (error) throw new InternalServerErrorException(error.message);
-        return data;
+
+        return {
+            data,
+            meta: {
+                total: count,
+                page,
+                limit,
+                totalPages: Math.ceil((count || 0) / limit)
+            }
+        };
     }
 
     // Buscar cliente por cédula o RUC
     async buscarPorCedula(cedulaRuc: string) {
-        const supabase = this.supabaseService.getClient();
-
-        const { data, error } = await supabase
+        const { data, error } = await this.supabaseService.getClient()
             .from('clientes')
             .select('*')
             .eq('cedula_ruc', cedulaRuc)
@@ -28,43 +47,31 @@ export class ClientesService {
         if (error || !data) {
             throw new NotFoundException(`Cliente con identificación ${cedulaRuc} no encontrado.`);
         }
-
         return data;
     }
 
     // Registrar un cliente nuevo
-    async crearCliente(clienteData: {
-        cedula_ruc: string;
-        nombres: string;
-        apellidos: string;
-        telefono?: string;
-        correo?: string;
-        direccion?: string;
-    }) {
-        const supabase = this.supabaseService.getClient();
-
-        const { data, error } = await supabase
+    async crearCliente(clienteData: CreateClienteDto) {
+        const { data, error } = await this.supabaseService.getClient()
             .from('clientes')
             .insert([clienteData])
             .select()
             .single();
 
         if (error) {
-            console.error('Error detallado de Supabase:', error);
             // Manejar error si la cédula ya existe en la BD
             if (error.code === '23505') {
                 throw new InternalServerErrorException('Ya existe un cliente registrado con esa cédula o RUC.');
             }
             throw new InternalServerErrorException('Error al registrar el cliente en la base de datos.');
         }
-
         return data;
     }
 
-    async actualizar(id: string, cliente: any) {
+    async actualizar(id: string, clienteData: UpdateClienteDto) {
         const { data, error } = await this.supabaseService.getClient()
             .from('clientes')
-            .update(cliente)
+            .update(clienteData)
             .eq('id', id)
             .select()
             .single();
