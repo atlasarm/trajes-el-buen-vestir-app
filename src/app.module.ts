@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { SupabaseModule } from './config/supabase.module';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { OrdenesModule } from './modules/ordenes/ordenes.module';
+import { FacturacionModule } from './modules/facturacion/facturacion.module';
 
 @Module({
   imports: [
@@ -12,8 +13,7 @@ import { OrdenesModule } from './modules/ordenes/ordenes.module';
     SupabaseModule,
     ClientesModule,
     OrdenesModule,
+    FacturacionModule,
   ],
-  controllers: [],
-  providers: [],
 })
 export class AppModule {}
