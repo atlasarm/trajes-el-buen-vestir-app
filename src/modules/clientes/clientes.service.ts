@@ -5,6 +5,16 @@ import { SupabaseService } from '../../config/supabase.service';
 export class ClientesService {
     constructor(private readonly supabaseService: SupabaseService) { }
 
+    async obtenerTodos() {
+        const { data, error } = await this.supabaseService.getClient()
+            .from('clientes')
+            .select('*')
+            .order('nombres', { ascending: true });
+
+        if (error) throw new InternalServerErrorException(error.message);
+        return data;
+    }
+
     // Buscar cliente por cédula o RUC
     async buscarPorCedula(cedulaRuc: string) {
         const supabase = this.supabaseService.getClient();
@@ -49,5 +59,27 @@ export class ClientesService {
         }
 
         return data;
+    }
+
+    async actualizar(id: string, cliente: any) {
+        const { data, error } = await this.supabaseService.getClient()
+            .from('clientes')
+            .update(cliente)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw new InternalServerErrorException(error.message);
+        return data;
+    }
+
+    async eliminar(id: string) {
+        const { error } = await this.supabaseService.getClient()
+            .from('clientes')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw new InternalServerErrorException(error.message);
+        return { message: 'Cliente eliminado correctamente' };
     }
 }
