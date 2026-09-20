@@ -1,4 +1,4 @@
-import { IsString, Matches, IsOptional, IsEmail, IsNotEmpty, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments, Validate } from 'class-validator';
+import { IsString, Matches, IsOptional, IsEmail, IsNotEmpty, ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments, Validate, ValidateIf } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 
 @ValidatorConstraint({ name: 'identificacionEcuatoriana', async: false })
@@ -66,6 +66,7 @@ export class CreateClienteDto {
     apellidos: string;
 
     @IsOptional()
+    @ValidateIf(o => o.telefono !== '')
     @Matches(/^09\d{8}$|^02\d{7}$/, { message: 'El teléfono debe ser celular o convencional.' })
     telefono?: string;
 
