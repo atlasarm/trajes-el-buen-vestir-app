@@ -138,18 +138,23 @@ export class OrdenesService {
         const supabase = this.supabaseService.getClient();
         const from = (page - 1) * limit;
         const to = from + limit - 1;
-        
+
         let query = supabase
             .from('ordenes_pedido')
             .select('*, clientes!inner(nombres, apellidos, cedula_ruc)', { count: 'exact' });
 
         if (search) {
-            const isNumeric = /^\d+$/.test(search);
+            const cleanSearch = search.replace(/^ord-?/i, '');
+            const isNumeric = /^\d+$/.test(cleanSearch);
             
             if (isNumeric) {
-                query = query.or(`numero_orden.eq.${search},clientes.cedula_ruc.ilike.%${search}%`);
+                if (cleanSearch.length >= 10) {
+                    query = query.eq('clientes.cedula_ruc', cleanSearch);
+                } else {
+                    query = query.eq('numero_orden', parseInt(cleanSearch, 10));
+                }
             } else {
-                query = query.or(`clientes.nombres.ilike.%${search}%,clientes.apellidos.ilike.%${search}%`);
+                query = query.or(`nombres.ilike.%${cleanSearch}%,apellidos.ilike.%${cleanSearch}%`, { referencedTable: 'clientes' });
             }
         }
 
@@ -164,11 +169,11 @@ export class OrdenesService {
 
         return {
             data,
-            meta: { 
-                total: count, 
-                page, 
-                limit, 
-                totalPages: Math.ceil((count || 0) / limit) 
+            meta: {
+                total: count,
+                page,
+                limit,
+                totalPages: Math.ceil((count || 0) / limit)
             }
         };
     }
