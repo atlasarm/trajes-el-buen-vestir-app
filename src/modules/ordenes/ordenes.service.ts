@@ -153,6 +153,38 @@ export class OrdenesService {
         return { mensaje: 'Orden actualizada exitosamente' };
     }
 
+    async eliminarOrden(id: string) {
+        const supabase = this.supabaseService.getClient();
+
+        const { data: orden, error: errorBusqueda } = await supabase
+            .from('ordenes_pedido')
+            .select('id, factura_id')
+            .eq('id', id)
+            .single();
+
+        if (errorBusqueda || !orden) {
+            throw new NotFoundException('La orden no existe o ya fue eliminada.');
+        }
+
+        if (orden.factura_id) {
+            throw new InternalServerErrorException('No se puede eliminar esta orden porque ya tiene una factura asociada.');
+        }
+
+        const { error: errorDelete } = await supabase
+            .from('ordenes_pedido')
+            .delete()
+            .eq('id', id);
+
+        if (errorDelete) {
+            if (errorDelete.code === '23503') {
+                throw new InternalServerErrorException('La orden está bloqueada por el sistema contable y no puede ser eliminada.');
+            }
+            throw new InternalServerErrorException(`Error al eliminar la orden: ${errorDelete.message}`);
+        }
+
+        return { mensaje: 'Orden eliminada exitosamente' };
+    }
+
     async registrarPago(id: string, nuevoPago: number) {
         const supabase = this.supabaseService.getClient();
 
