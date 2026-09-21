@@ -132,4 +132,32 @@ export class OrdenesService {
             nuevo_saldo_pendiente: ordenActualizada.saldo
         };
     }
+
+    // Método para poblar la tabla del Frontend con paginación y datos de clientes
+    async obtenerTodos(page: number = 1, limit: number = 10) {
+        const supabase = this.supabaseService.getClient();
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+        
+        const { data, count, error } = await supabase
+            .from('ordenes_pedido')
+            .select('*, clientes(nombres, apellidos, cedula_ruc)', { count: 'exact' })
+            .order('fecha_creacion', { ascending: false })
+            .range(from, to);
+
+        if (error) {
+            console.error('Error al obtener órdenes:', error);
+            throw new InternalServerErrorException('Error al consultar el historial de órdenes.');
+        }
+
+        return {
+            data,
+            meta: { 
+                total: count, 
+                page, 
+                limit, 
+                totalPages: Math.ceil((count || 0) / limit) 
+            }
+        };
+    }
 }
