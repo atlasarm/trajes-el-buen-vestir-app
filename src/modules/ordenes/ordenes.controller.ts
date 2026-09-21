@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, Patch, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Patch, Delete, Query } from '@nestjs/common';
 import { OrdenesService } from './ordenes.service';
 import { CreateOrdenDto } from './dto/orden.dto';
 
@@ -39,5 +39,10 @@ export class OrdenesController {
         @Body('monto') monto: number,
     ) {
         return await this.ordenesService.registrarPago(id, monto);
+    }
+
+    @Delete(':id')
+    async anularOrden(@Param('id') id: string) {
+        return await this.ordenesService.eliminarOrden(id);
     }
 }
