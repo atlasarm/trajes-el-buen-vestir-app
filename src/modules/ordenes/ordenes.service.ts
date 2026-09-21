@@ -133,15 +133,27 @@ export class OrdenesService {
         };
     }
 
-    // Método para poblar la tabla del Frontend con paginación y datos de clientes
-    async obtenerTodos(page: number = 1, limit: number = 10) {
+    // Método para poblar la tabla del Frontend con paginación y búsqueda
+    async obtenerTodos(page: number = 1, limit: number = 10, search?: string) {
         const supabase = this.supabaseService.getClient();
         const from = (page - 1) * limit;
         const to = from + limit - 1;
         
-        const { data, count, error } = await supabase
+        let query = supabase
             .from('ordenes_pedido')
-            .select('*, clientes(nombres, apellidos, cedula_ruc)', { count: 'exact' })
+            .select('*, clientes!inner(nombres, apellidos, cedula_ruc)', { count: 'exact' });
+
+        if (search) {
+            const isNumeric = /^\d+$/.test(search);
+            
+            if (isNumeric) {
+                query = query.or(`numero_orden.eq.${search},clientes.cedula_ruc.ilike.%${search}%`);
+            } else {
+                query = query.or(`clientes.nombres.ilike.%${search}%,clientes.apellidos.ilike.%${search}%`);
+            }
+        }
+
+        const { data, count, error } = await query
             .order('fecha_creacion', { ascending: false })
             .range(from, to);
 

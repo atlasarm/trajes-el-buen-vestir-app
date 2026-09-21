@@ -8,9 +8,10 @@ export class OrdenesController {
     @Get()
     async obtenerTodas(
         @Query('page') page: string,
-        @Query('limit') limit: string
+        @Query('limit') limit: string,
+        @Query('search') search: string
     ) {
-        return await this.ordenesService.obtenerTodos(Number(page) || 1, Number(limit) || 10);
+        return await this.ordenesService.obtenerTodos(Number(page) || 1, Number(limit) || 10, search);
     }
     
     @Post('nueva')
