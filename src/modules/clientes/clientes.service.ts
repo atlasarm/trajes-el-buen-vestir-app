@@ -63,7 +63,7 @@ export class ClientesService {
             if (error.code === '23505') {
                 throw new InternalServerErrorException('Ya existe un cliente registrado con esa cédula o RUC.');
             }
-            throw new InternalServerErrorException('Error al registrar el cliente en la base de datos.');
+            throw new InternalServerErrorException(`Fallo en Supabase: ${error.message} (Código: ${error.code})`);
         }
         return data;
     }
