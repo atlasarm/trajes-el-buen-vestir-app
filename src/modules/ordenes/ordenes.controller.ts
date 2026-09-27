@@ -33,6 +33,14 @@ export class OrdenesController {
         return await this.ordenesService.actualizarOrden(id, body);
     }
 
+    @Patch(':id/estado')
+    async cambiarEstadoOrden(
+        @Param('id') id: string,
+        @Body('estado') estado: string,
+    ) {
+        return await this.ordenesService.actualizarEstado(id, estado);
+    }
+
     @Patch(':id/pago')
     async registrarNuevoPago(
         @Param('id') id: string,

@@ -10,7 +10,7 @@ export class OrdenesService {
         const supabase = this.supabaseService.getClient();
         const from = (page - 1) * limit;
         const to = from + limit - 1;
-        
+
         let query = supabase
             .from('ordenes_pedido')
             .select('*, clientes!inner(nombres, apellidos, cedula_ruc)', { count: 'exact' });
@@ -18,7 +18,7 @@ export class OrdenesService {
         if (search) {
             const cleanSearch = search.replace(/^ord-?/i, '');
             const isNumeric = /^\d+$/.test(cleanSearch);
-            
+
             if (isNumeric) {
                 if (cleanSearch.length >= 10) {
                     query = query.eq('clientes.cedula_ruc', cleanSearch);
@@ -40,11 +40,11 @@ export class OrdenesService {
 
         return {
             data,
-            meta: { 
-                total: count, 
-                page, 
-                limit, 
-                totalPages: Math.ceil((count || 0) / limit) 
+            meta: {
+                total: count,
+                page,
+                limit,
+                totalPages: Math.ceil((count || 0) / limit)
             }
         };
     }
@@ -126,10 +126,10 @@ export class OrdenesService {
 
         const { error: cabeceraError } = await supabase
             .from('ordenes_pedido')
-            .update({ 
-                fecha_entrega_estimada, 
-                abono: abono || 0, 
-                subtotal: subtotalCalculado 
+            .update({
+                fecha_entrega_estimada,
+                abono: abono || 0,
+                subtotal: subtotalCalculado
             })
             .eq('id', id);
 
@@ -176,7 +176,7 @@ export class OrdenesService {
 
         const { error: errorUpdate } = await supabase
             .from('ordenes_pedido')
-            .update({ 
+            .update({
                 estado: 'Anulada',
                 abono: 0,
                 subtotal: 0
@@ -229,5 +229,27 @@ export class OrdenesService {
             nuevo_abono_total: ordenActualizada.abono,
             nuevo_saldo_pendiente: ordenActualizada.saldo
         };
+    }
+
+    async actualizarEstado(id: string, nuevoEstado: string) {
+        const supabase = this.supabaseService.getClient();
+
+        const estadosValidos = ['Pendiente', 'En Confección', 'Listo para Prueba', 'Entregado', 'Anulada'];
+        if (!estadosValidos.includes(nuevoEstado)) {
+            throw new InternalServerErrorException('El estado proporcionado no es válido para el flujo de producción.');
+        }
+
+        const { data, error } = await supabase
+            .from('ordenes_pedido')
+            .update({ estado: nuevoEstado })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            throw new InternalServerErrorException(`Error al actualizar el estado: ${error.message}`);
+        }
+
+        return { mensaje: 'Estado actualizado correctamente', estado_actual: data.estado };
     }
 }
