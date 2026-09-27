@@ -158,31 +158,36 @@ export class OrdenesService {
 
         const { data: orden, error: errorBusqueda } = await supabase
             .from('ordenes_pedido')
-            .select('id, factura_id')
+            .select('id, factura_id, estado')
             .eq('id', id)
             .single();
 
         if (errorBusqueda || !orden) {
-            throw new NotFoundException('La orden no existe o ya fue eliminada.');
+            throw new NotFoundException('La orden no existe.');
+        }
+
+        if (orden.estado === 'Anulada') {
+            throw new InternalServerErrorException('Esta orden ya se encuentra anulada.');
         }
 
         if (orden.factura_id) {
-            throw new InternalServerErrorException('No se puede eliminar esta orden porque ya tiene una factura asociada.');
+            throw new InternalServerErrorException('No se puede anular esta orden porque ya tiene una factura asociada.');
         }
 
-        const { error: errorDelete } = await supabase
+        const { error: errorUpdate } = await supabase
             .from('ordenes_pedido')
-            .delete()
+            .update({ 
+                estado: 'Anulada',
+                abono: 0,
+                subtotal: 0
+            })
             .eq('id', id);
 
-        if (errorDelete) {
-            if (errorDelete.code === '23503') {
-                throw new InternalServerErrorException('La orden está bloqueada por el sistema contable y no puede ser eliminada.');
-            }
-            throw new InternalServerErrorException(`Error al eliminar la orden: ${errorDelete.message}`);
+        if (errorUpdate) {
+            throw new InternalServerErrorException(`Error al anular la orden: ${errorUpdate.message}`);
         }
 
-        return { mensaje: 'Orden eliminada exitosamente' };
+        return { mensaje: 'Orden anulada exitosamente' };
     }
 
     async registrarPago(id: string, nuevoPago: number) {
