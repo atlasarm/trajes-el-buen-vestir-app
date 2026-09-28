@@ -1,130 +1,109 @@
 import { Injectable, InternalServerErrorException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../../config/supabase.service';
+import { CreateFacturaDto } from './dto/factura.dto';
 import { SriService } from '../sri/sri.service';
-import { FacturaSRIDto, ItemFacturaSRI } from '../sri/sri.interface';
+import { FacturaSRIDto } from '../sri/sri.interface';
 
 @Injectable()
 export class FacturacionService {
     constructor(
-        private supabaseService: SupabaseService,
-        private sriService: SriService
-    ) {}
+        private readonly supabaseService: SupabaseService,
+        private readonly sriService: SriService
+    ) { }
 
-    private async obtenerSiguienteSecuencial(): Promise<string> {
-        return '000000002'; 
+    async obtenerTodas(page: number = 1, limit: number = 10, search?: string) {
+        const supabase = this.supabaseService.getClient();
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
+
+        let query = supabase
+            .from('facturacion')
+            .select('*, clientes!inner(nombres, apellidos, cedula_ruc), ordenes_pedido(numero_orden)', { count: 'exact' });
+
+        if (search) {
+            query = query.or(`clientes.cedula_ruc.ilike.%${search}%,clientes.nombres.ilike.%${search}%,clientes.apellidos.ilike.%${search}%`);
+        }
+
+        const { data, count, error } = await query.order('fecha_emision', { ascending: false }).range(from, to);
+
+        if (error) throw new InternalServerErrorException('Error al consultar facturas.');
+
+        return {
+            data,
+            meta: { total: count, page, limit, totalPages: Math.ceil((count || 0) / limit) }
+        };
     }
 
-    // Facturación Libre (Ventas directas, sin orden previa)
-    async generarFacturaLibre(datosVenta: any) {
-        const secuencial = await this.obtenerSiguienteSecuencial();
+    async emitirFactura(dto: CreateFacturaDto) {
+        const supabase = this.supabaseService.getClient();
 
-        // Construir el DTO estandarizado
-        const facturaDto: FacturaSRIDto = {
-            secuencial: secuencial,
-            subtotal: datosVenta.subtotal,
+        const { data: orden, error: errOrden } = await supabase
+            .from('ordenes_pedido')
+            .select('*, clientes(*), orden_detalles(*)')
+            .eq('id', dto.orden_id)
+            .single();
+
+        if (errOrden || !orden) throw new NotFoundException('Orden de pedido no encontrada.');
+        if (orden.estado === 'Anulada') throw new BadRequestException('No se puede facturar una orden anulada.');
+        if (orden.factura_id) throw new BadRequestException('Esta orden ya tiene una factura emitida.');
+
+        const subtotal = orden.subtotal;
+        const iva = 0;
+        const total = subtotal;
+
+        const { data: factura, error: errFactura } = await supabase
+            .from('facturacion')
+            .insert([{
+                cliente_id: orden.cliente_id,
+                orden_id: orden.id,
+                subtotal,
+                iva,
+                total,
+                metodo_pago: dto.metodo_pago || 'Efectivo',
+                estado_sri: 'PROCESANDO'
+            }])
+            .select()
+            .single();
+
+        if (errFactura) throw new InternalServerErrorException(`Error al guardar la factura local: ${errFactura.message}`);
+
+        await supabase.from('ordenes_pedido').update({ factura_id: factura.id }).eq('id', orden.id);
+
+        const identificacion = orden.clientes.cedula_ruc;
+        const tipoIdentificacion = identificacion.length === 13 ? '04' : (identificacion.length === 10 ? '05' : '06');
+
+        const sriDto: FacturaSRIDto = {
+            secuencial: factura.numero_factura.toString().padStart(9, '0'),
             cliente: {
-                razonSocial: datosVenta.cliente.nombreCompleto,
-                identificacion: datosVenta.cliente.identificacion,
-                tipoIdentificacion: datosVenta.cliente.identificacion.length === 13 ? '04' : '05',
-                direccion: datosVenta.cliente.direccion || 'Quito, Ecuador'
+                tipoIdentificacion,
+                razonSocial: `${orden.clientes.nombres} ${orden.clientes.apellidos}`.trim(),
+                identificacion: identificacion,
+                direccion: orden.clientes.direccion || 'Quito, Ecuador'
             },
-            items: datosVenta.items.map((item: any, index: number) => ({
-                codigoPrincipal: item.codigoPrincipal || `VD-${index + 1}`,
-                descripcion: item.descripcion,
-                cantidad: item.cantidad,
-                precioUnitario: item.precioUnitario,
-                descuento: item.descuento || 0
+            subtotal: subtotal,
+            items: orden.orden_detalles.map((detalle: any, index: number) => ({
+                codigoPrincipal: `P-${(index + 1).toString().padStart(3, '0')}`,
+                descripcion: detalle.descripcion,
+                cantidad: detalle.cantidad,
+                precioUnitario: detalle.precio_unitario,
+                descuento: 0
             }))
         };
 
-        // Enviar al motor del SRI
-        const resultadoSRI = await this.sriService.procesarFacturaElectronica(facturaDto);
-
-        return {
-            origen: 'Venta Directa',
-            ...resultadoSRI
-        };
-    }
-
-    // Facturar a partir de 1 o Múltiples Órdenes de Pedido
-    async generarFacturaDesdeOrdenes(ordenIds: string[]) {
-        if (!ordenIds || ordenIds.length === 0) {
-            throw new BadRequestException('Debe proporcionar al menos un ID de orden de pedido.');
-        }
-
-        const supabase = this.supabaseService.getClient();
-
-        // Extraer todas las órdenes con sus clientes y detalles
-        const { data: ordenes, error } = await supabase
-            .from('ordenes_pedido')
-            .select(`
-                *,
-                clientes (nombres, apellidos, cedula_ruc, telefono, direccion, correo),
-                orden_detalles (*)
-            `)
-            .in('id', ordenIds);
-
-        if (error || !ordenes || ordenes.length === 0) {
-            throw new NotFoundException('No se encontraron las órdenes solicitadas.');
-        }
-
-        const secuencial = await this.obtenerSiguienteSecuencial();
-
-        // Consolidar datos: Se toma al cliente de la primera orden como titular
-        const clientePrincipal = ordenes[0].clientes;
-        let subtotalGlobal = 0;
-        let itemsGlobales: ItemFacturaSRI[] = [];
-
-        ordenes.forEach((orden) => {
-            subtotalGlobal += orden.subtotal;
+        try {
+            const resultadoSri = await this.sriService.procesarFacturaElectronica(sriDto);
             
-            const itemsOrden = orden.orden_detalles.map((item: any, index: number) => ({
-                codigoPrincipal: `ORD-${orden.id.split('-')[0]}-${index + 1}`,
-                descripcion: item.descripcion,
-                cantidad: item.cantidad,
-                precioUnitario: item.precio_unitario,
-                descuento: 0 
-            }));
-
-            itemsGlobales = [...itemsGlobales, ...itemsOrden];
-        });
-
-        // Construir el DTO estandarizado para el SRI
-        const facturaDto: FacturaSRIDto = {
-            secuencial: secuencial,
-            subtotal: subtotalGlobal,
-            cliente: {
-                razonSocial: `${clientePrincipal.nombres} ${clientePrincipal.apellidos}`,
-                identificacion: clientePrincipal.cedula_ruc,
-                tipoIdentificacion: clientePrincipal.cedula_ruc.length === 13 ? '04' : '05',
-                direccion: clientePrincipal.direccion || 'Quito, Ecuador'
-            },
-            items: itemsGlobales
-        };
-
-        // Enviar al motor del SRI
-        const resultadoSRI = await this.sriService.procesarFacturaElectronica(facturaDto);
-
-        // Si el SRI autoriza, se actualiza el estado de TODAS las órdenes en Supabase
-        if (resultadoSRI.exito) {
-            const { error: updateError } = await supabase
-                .from('ordenes_pedido')
-                .update({
-                    estado: 'Facturada',
-                    clave_acceso_sri: resultadoSRI.claveAcceso,
-                    fecha_facturacion: new Date().toISOString()
-                })
-                .in('id', ordenIds);
-
-            if (updateError) {
-                console.error('Alerta: Falló la actualización múltiple en Supabase:', updateError.message);
-            }
+            await supabase.from('facturacion').update({
+                estado_sri: resultadoSri.exito ? 'AUTORIZADO' : 'RECHAZADO',
+                clave_acceso: resultadoSri.claveAcceso,
+                xml_autorizado: resultadoSri.xmlAutorizado
+            }).eq('id', factura.id);
+            
+            return { ...factura, sri: resultadoSri };
+        } catch (sriError) {
+            console.error("Fallo de comunicación con el SRI:", sriError);
+            await supabase.from('facturacion').update({ estado_sri: 'ERROR_CONEXION' }).eq('id', factura.id);
+            return { ...factura, sri: { exito: false, mensaje: 'Registrada localmente, pendiente de conexión con el SRI.' } };
         }
-
-        return {
-            origen: 'Órdenes de Pedido Consolidadas',
-            ordenes_procesadas: ordenIds,
-            ...resultadoSRI
-        };
     }
 }
