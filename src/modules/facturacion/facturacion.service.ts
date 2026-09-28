@@ -127,4 +127,36 @@ export class FacturacionService {
             return { ...factura, sri: { exito: false, mensaje: 'Registrada localmente, falló conexión con SRI.' } };
         }
     }
+
+    async obtenerPorId(id: string) {
+        const supabase = this.supabaseService.getClient();
+        const { data, error } = await supabase
+            .from('facturas')
+            .select(`
+                *,
+                clientes (*),
+                ordenes_pedido (*),
+                factura_detalles (*)
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error || !data) throw new NotFoundException('Factura no encontrada.');
+        return data;
+    }
+
+    async anularFactura(id: string) {
+        const supabase = this.supabaseService.getClient();
+        
+        const factura = await this.obtenerPorId(id);
+
+        if (factura.orden_id) {
+            await supabase.from('ordenes_pedido').update({ factura_id: null }).eq('id', factura.orden_id);
+        }
+
+        const { error } = await supabase.from('facturas').update({ estado_sri: 'ANULADA' }).eq('id', id);
+        
+        if (error) throw new InternalServerErrorException('Error al anular la factura.');
+        return { mensaje: 'Factura anulada y orden liberada con éxito.' };
+    }
 }
