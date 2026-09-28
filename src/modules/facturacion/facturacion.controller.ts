@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Param, Delete} from '@nestjs/common';
 import { FacturacionService } from './facturacion.service';
 import { CreateFacturaDto } from './dto/factura.dto';
 
@@ -18,5 +18,15 @@ export class FacturacionController {
     @Post('emitir')
     async generarYEnviar(@Body() body: CreateFacturaDto) {
         return await this.facturacionService.emitirFactura(body);
+    }
+
+    @Get(':id')
+    async obtenerPorId(@Param('id') id: string) {
+        return await this.facturacionService.obtenerPorId(id);
+    }
+
+    @Delete(':id')
+    async anularFactura(@Param('id') id: string) {
+        return await this.facturacionService.anularFactura(id);
     }
 }
