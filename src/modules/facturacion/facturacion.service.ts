@@ -18,7 +18,7 @@ export class FacturacionService {
 
         let query = supabase
             .from('facturas')
-            .select('*, clientes!inner(nombres, apellidos, cedula_ruc), ordenes_pedido(numero_orden)', { count: 'exact' });
+            .select('*, clientes!inner(nombres, apellidos, cedula_ruc), ordenes_pedido!facturas_orden_id_fkey(numero_orden)', { count: 'exact' });
 
         if (search) {
             query = query.or(`clientes.cedula_ruc.ilike.%${search}%,clientes.nombres.ilike.%${search}%,clientes.apellidos.ilike.%${search}%`);
@@ -26,7 +26,10 @@ export class FacturacionService {
 
         const { data, count, error } = await query.order('fecha_emision', { ascending: false }).range(from, to);
 
-        if (error) throw new InternalServerErrorException('Error al consultar facturas.');
+        if (error) {
+            console.error("Error exacto de Supabase:", error);
+            throw new InternalServerErrorException(`Error de BD al consultar facturas: ${error.message}`);
+        }
 
         return {
             data,
