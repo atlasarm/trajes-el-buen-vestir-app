@@ -54,7 +54,6 @@ export class FacturacionService {
         }
 
         const subtotal = dto.detalles.reduce((acc, item) => acc + (item.cantidad * item.precio_unitario), 0);
-        const iva = 0;
         const total = subtotal;
 
         const { data: factura, error: errFactura } = await supabase
@@ -63,7 +62,6 @@ export class FacturacionService {
                 cliente_id: dto.cliente_id,
                 orden_id: dto.orden_id || null,
                 subtotal,
-                iva,
                 total,
                 metodo_pago: dto.metodo_pago || 'Efectivo',
                 estado_sri: 'PROCESANDO'
