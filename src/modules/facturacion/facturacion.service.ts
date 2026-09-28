@@ -17,7 +17,7 @@ export class FacturacionService {
         const to = from + limit - 1;
 
         let query = supabase
-            .from('facturacion')
+            .from('facturas')
             .select('*, clientes!inner(nombres, apellidos, cedula_ruc), ordenes_pedido(numero_orden)', { count: 'exact' });
 
         if (search) {
@@ -58,7 +58,7 @@ export class FacturacionService {
         const total = subtotal;
 
         const { data: factura, error: errFactura } = await supabase
-            .from('facturacion')
+            .from('facturas')
             .insert([{
                 cliente_id: dto.cliente_id,
                 orden_id: dto.orden_id || null,
@@ -100,14 +100,14 @@ export class FacturacionService {
 
         try {
             const resultadoSri = await this.sriService.procesarFacturaElectronica(sriDto);
-            await supabase.from('facturacion').update({
+            await supabase.from('facturas').update({
                 estado_sri: resultadoSri.exito ? 'AUTORIZADO' : 'RECHAZADO',
                 clave_acceso: resultadoSri.claveAcceso,
                 xml_autorizado: resultadoSri.xmlAutorizado
             }).eq('id', factura.id);
             return { ...factura, sri: resultadoSri };
         } catch (sriError) {
-            await supabase.from('facturacion').update({ estado_sri: 'ERROR_CONEXION' }).eq('id', factura.id);
+            await supabase.from('facturas').update({ estado_sri: 'ERROR_CONEXION' }).eq('id', factura.id);
             return { ...factura, sri: { exito: false, mensaje: 'Registrada localmente, SRI falló.' } };
         }
     }
