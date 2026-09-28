@@ -37,25 +37,31 @@ export class FacturacionService {
     async emitirFactura(dto: CreateFacturaDto) {
         const supabase = this.supabaseService.getClient();
 
-        const { data: orden, error: errOrden } = await supabase
-            .from('ordenes_pedido')
-            .select('*, clientes(*), orden_detalles(*)')
-            .eq('id', dto.orden_id)
+        const { data: cliente, error: errCliente } = await supabase
+            .from('clientes')
+            .select('*')
+            .eq('id', dto.cliente_id)
             .single();
 
-        if (errOrden || !orden) throw new NotFoundException('Orden de pedido no encontrada.');
-        if (orden.estado === 'Anulada') throw new BadRequestException('No se puede facturar una orden anulada.');
-        if (orden.factura_id) throw new BadRequestException('Esta orden ya tiene una factura emitida.');
+        if (errCliente || !cliente) throw new NotFoundException('Cliente no encontrado.');
 
-        const subtotal = orden.subtotal;
+        if (dto.orden_id) {
+            const { data: orden } = await supabase.from('ordenes_pedido').select('estado, factura_id').eq('id', dto.orden_id).single();
+            if (orden) {
+                if (orden.estado === 'Anulada') throw new BadRequestException('No se puede facturar una orden anulada.');
+                if (orden.factura_id) throw new BadRequestException('Esta orden ya tiene una factura emitida.');
+            }
+        }
+
+        const subtotal = dto.detalles.reduce((acc, item) => acc + (item.cantidad * item.precio_unitario), 0);
         const iva = 0;
         const total = subtotal;
 
         const { data: factura, error: errFactura } = await supabase
             .from('facturacion')
             .insert([{
-                cliente_id: orden.cliente_id,
-                orden_id: orden.id,
+                cliente_id: dto.cliente_id,
+                orden_id: dto.orden_id || null,
                 subtotal,
                 iva,
                 total,
@@ -65,23 +71,25 @@ export class FacturacionService {
             .select()
             .single();
 
-        if (errFactura) throw new InternalServerErrorException(`Error al guardar la factura local: ${errFactura.message}`);
+        if (errFactura) throw new InternalServerErrorException(`Error al guardar factura: ${errFactura.message}`);
 
-        await supabase.from('ordenes_pedido').update({ factura_id: factura.id }).eq('id', orden.id);
+        if (dto.orden_id) {
+            await supabase.from('ordenes_pedido').update({ factura_id: factura.id }).eq('id', dto.orden_id);
+        }
 
-        const identificacion = orden.clientes.cedula_ruc;
+        const identificacion = cliente.cedula_ruc;
         const tipoIdentificacion = identificacion.length === 13 ? '04' : (identificacion.length === 10 ? '05' : '06');
 
         const sriDto: FacturaSRIDto = {
             secuencial: factura.numero_factura.toString().padStart(9, '0'),
             cliente: {
                 tipoIdentificacion,
-                razonSocial: `${orden.clientes.nombres} ${orden.clientes.apellidos}`.trim(),
+                razonSocial: `${cliente.nombres} ${cliente.apellidos}`.trim(),
                 identificacion: identificacion,
-                direccion: orden.clientes.direccion || 'Quito, Ecuador'
+                direccion: cliente.direccion || 'Quito, Ecuador'
             },
             subtotal: subtotal,
-            items: orden.orden_detalles.map((detalle: any, index: number) => ({
+            items: dto.detalles.map((detalle: any, index: number) => ({
                 codigoPrincipal: `P-${(index + 1).toString().padStart(3, '0')}`,
                 descripcion: detalle.descripcion,
                 cantidad: detalle.cantidad,
@@ -92,18 +100,15 @@ export class FacturacionService {
 
         try {
             const resultadoSri = await this.sriService.procesarFacturaElectronica(sriDto);
-            
             await supabase.from('facturacion').update({
                 estado_sri: resultadoSri.exito ? 'AUTORIZADO' : 'RECHAZADO',
                 clave_acceso: resultadoSri.claveAcceso,
                 xml_autorizado: resultadoSri.xmlAutorizado
             }).eq('id', factura.id);
-            
             return { ...factura, sri: resultadoSri };
         } catch (sriError) {
-            console.error("Fallo de comunicación con el SRI:", sriError);
             await supabase.from('facturacion').update({ estado_sri: 'ERROR_CONEXION' }).eq('id', factura.id);
-            return { ...factura, sri: { exito: false, mensaje: 'Registrada localmente, pendiente de conexión con el SRI.' } };
+            return { ...factura, sri: { exito: false, mensaje: 'Registrada localmente, SRI falló.' } };
         }
     }
 }
