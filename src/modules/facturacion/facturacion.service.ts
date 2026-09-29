@@ -135,13 +135,21 @@ export class FacturacionService {
             .select(`
                 *,
                 clientes (*),
-                ordenes_pedido (*),
+                ordenes_pedido!facturas_orden_id_fkey (*),
                 factura_detalles (*)
             `)
             .eq('id', id)
             .single();
 
-        if (error || !data) throw new NotFoundException('Factura no encontrada.');
+        if (error) {
+            console.error("Error exacto de Supabase en obtenerPorId:", error);
+            throw new InternalServerErrorException(`Error de BD al consultar la factura: ${error.message}`);
+        }
+
+        if (!data) {
+            throw new NotFoundException('Factura no encontrada.');
+        }
+
         return data;
     }
 
