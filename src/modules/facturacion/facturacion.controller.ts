@@ -25,6 +25,11 @@ export class FacturacionController {
         return await this.facturacionService.obtenerPorId(id);
     }
 
+    @Post(':id/reintentar')
+    async reintentarSri(@Param('id') id: string) {
+        return await this.facturacionService.reintentarSri(id);
+    }
+
     @Delete(':id')
     async anularFactura(@Param('id') id: string) {
         return await this.facturacionService.anularFactura(id);

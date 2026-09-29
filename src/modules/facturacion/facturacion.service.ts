@@ -167,4 +167,50 @@ export class FacturacionService {
         if (error) throw new InternalServerErrorException('Error al anular la factura.');
         return { mensaje: 'Factura anulada y orden liberada con éxito.' };
     }
+
+    async reintentarSri(id: string) {
+        const supabase = this.supabaseService.getClient();
+        const factura = await this.obtenerPorId(id);
+
+        if (factura.estado_sri === 'AUTORIZADO') {
+            throw new BadRequestException('La factura ya está autorizada, no se puede reintentar.');
+        }
+
+        const identificacion = factura.clientes.cedula_ruc;
+        const tipoIdentificacion = identificacion.length === 13 ? '04' : (identificacion.length === 10 ? '05' : '06');
+        const secuencialFormateado = (factura.secuencial_local || 1).toString().padStart(9, '0');
+
+        const sriDto: FacturaSRIDto = {
+            secuencial: secuencialFormateado,
+            cliente: {
+                tipoIdentificacion,
+                razonSocial: `${factura.clientes.nombres} ${factura.clientes.apellidos}`.trim(),
+                identificacion: identificacion,
+                direccion: factura.clientes.direccion || 'Quito, Ecuador'
+            },
+            subtotal: factura.subtotal_factura,
+            items: factura.factura_detalles.map((detalle: any, index: number) => ({
+                codigoPrincipal: `P-${(index + 1).toString().padStart(3, '0')}`,
+                descripcion: detalle.descripcion,
+                cantidad: detalle.cantidad,
+                precioUnitario: detalle.precio_unitario,
+                descuento: 0
+            }))
+        };
+
+        try {
+            const resultadoSri = await this.sriService.procesarFacturaElectronica(sriDto);
+            
+            await supabase.from('facturas').update({
+                estado_sri: resultadoSri.exito ? 'AUTORIZADO' : 'RECHAZADO',
+                numero_factura_sri: secuencialFormateado,
+                clave_acceso_sri: resultadoSri.claveAcceso,
+                xml_url: resultadoSri.xmlAutorizado 
+            }).eq('id', factura.id);
+            
+            return { mensaje: 'Reintento finalizado', sri: resultadoSri };
+        } catch (sriError) {
+            return { mensaje: 'El SRI sigue sin responder.', sri: { exito: false } };
+        }
+    }
 }
