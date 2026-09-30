@@ -51,15 +51,15 @@ export class FacturacionService {
 
         // 2. Calcular valores
         const subtotal = dto.detalles.reduce((acc, item) => acc + (item.cantidad * item.precio_unitario), 0);
-        const iva = 0; 
+        const iva = 0;
         const total = subtotal;
 
-        // 3. Crear cabecera en BD (Sin campos de rollback, esos van en la orden)
+        // 3. Crear cabecera en BD
         const { data: factura, error: errFactura } = await supabase
             .from('facturas')
             .insert([{
                 cliente_id: dto.cliente_id,
-                orden_id: dto.orden_id || null, 
+                orden_id: dto.orden_id || null,
                 subtotal_factura: subtotal,
                 iva_aplicado: iva,
                 total_factura: total,
@@ -83,16 +83,16 @@ export class FacturacionService {
         // 5. Vincular la orden y hacer la "Fotografía" del saldo (Rollback)
         if (dto.orden_id) {
             const { data: orden } = await supabase.from('ordenes_pedido').select('abono, saldo, estado, factura_id').eq('id', dto.orden_id).single();
-            
+
             if (orden) {
                 if (orden.estado === 'Anulada') throw new BadRequestException('No se puede facturar una orden anulada.');
                 if (orden.factura_id) throw new BadRequestException('Esta orden ya tiene una factura emitida.');
 
-                await supabase.from('ordenes_pedido').update({ 
+                await supabase.from('ordenes_pedido').update({
                     factura_id: factura.id,
                     abono_antes_facturar: orden.abono,
                     saldo_antes_facturar: orden.saldo,
-                    abono: subtotal, // Al facturarse, se asume pagada en su totalidad
+                    abono: subtotal,
                     saldo: 0
                 }).eq('id', dto.orden_id);
             }
@@ -122,10 +122,9 @@ export class FacturacionService {
         };
 
         // 7. Enviar al SRI y guardar el mensaje real de validación
-        // 7. Enviar al SRI y guardar el mensaje real de validación
         try {
             const resultadoSri = await this.sriService.procesarFacturaElectronica(sriDto);
-            
+
             await supabase.from('facturas').update({
                 estado_sri: resultadoSri.exito ? 'AUTORIZADO' : 'RECHAZADO',
                 numero_factura_sri: secuencialFormateado,
@@ -133,12 +132,12 @@ export class FacturacionService {
                 xml_url: resultadoSri.xmlAutorizado,
                 mensaje_sri: resultadoSri.exito ? 'Autorizado' : 'Rechazado por validaciones del SRI.'
             }).eq('id', factura.id);
-            
+
             return { ...factura, sri: resultadoSri };
         } catch (sriError: any) {
-            await supabase.from('facturas').update({ 
+            await supabase.from('facturas').update({
                 estado_sri: 'ERROR_CONEXION',
-                mensaje_sri: sriError.message || 'Error desconocido al firmar o transmitir.' 
+                mensaje_sri: sriError.message || 'Error desconocido al firmar o transmitir.'
             }).eq('id', factura.id);
             return { ...factura, sri: { exito: false, mensaje: 'Registrada localmente, falló conexión con SRI.' } };
         }
@@ -171,7 +170,7 @@ export class FacturacionService {
 
     async anularFactura(id: string) {
         const supabase = this.supabaseService.getClient();
-        
+
         // 1. Marcar la factura como ANULADA
         const { error } = await supabase.from('facturas').update({ estado_sri: 'ANULADA' }).eq('id', id);
         if (error) throw new InternalServerErrorException('Error al anular la factura.');
@@ -181,7 +180,7 @@ export class FacturacionService {
             .from('ordenes_pedido')
             .select('id, abono_antes_facturar, saldo_antes_facturar')
             .eq('factura_id', id);
-        
+
         if (ordenesAfectadas && ordenesAfectadas.length > 0) {
             for (const ord of ordenesAfectadas) {
                 await supabase.from('ordenes_pedido').update({
@@ -193,7 +192,7 @@ export class FacturacionService {
                 }).eq('id', ord.id);
             }
         }
-        
+
         return { mensaje: 'Factura anulada y rollback de órdenes ejecutado con éxito.' };
     }
 
@@ -229,7 +228,7 @@ export class FacturacionService {
 
         try {
             const resultadoSri = await this.sriService.procesarFacturaElectronica(sriDto);
-            
+
             await supabase.from('facturas').update({
                 estado_sri: resultadoSri.exito ? 'AUTORIZADO' : 'RECHAZADO',
                 numero_factura_sri: secuencialFormateado,
@@ -237,12 +236,12 @@ export class FacturacionService {
                 xml_url: resultadoSri.xmlAutorizado,
                 mensaje_sri: resultadoSri.exito ? 'Autorizado' : 'Rechazado por validaciones del SRI.'
             }).eq('id', factura.id);
-            
+
             return { mensaje: 'Reintento finalizado', sri: resultadoSri };
         } catch (sriError: any) {
-            await supabase.from('facturas').update({ 
+            await supabase.from('facturas').update({
                 estado_sri: 'ERROR_CONEXION',
-                mensaje_sri: sriError.message || 'Fallo de conexión.' 
+                mensaje_sri: sriError.message || 'Fallo de conexión.'
             }).eq('id', factura.id);
             return { mensaje: 'El SRI sigue sin responder.', sri: { exito: false } };
         }
